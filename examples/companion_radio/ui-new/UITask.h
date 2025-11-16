@@ -18,6 +18,11 @@
 #include "../AbstractUITask.h"
 #include "../NodePrefs.h"
 
+// Screen mode constants
+#define SCREEN_MODE_ALWAYS    0
+#define SCREEN_MODE_MESSAGES  1
+#define SCREEN_MODE_NEVER     2
+
 class UITask : public AbstractUITask {
   DisplayDriver* _display;
   SensorManager* _sensors;
@@ -44,6 +49,8 @@ class UITask : public AbstractUITask {
   unsigned long _analogue_pin_read_millis = millis();
 #endif
 
+  bool powersave_enabled;  // Powersave mode toggle
+
   UIScreen* splash;
   UIScreen* home;
   UIScreen* msg_preview;
@@ -65,6 +72,7 @@ public:
     next_batt_chck = _next_refresh = 0;
     ui_started_at = 0;
     curr = NULL;
+    powersave_enabled = false;  // Default to disabled for emergency devices
   }
   void begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* node_prefs);
 
@@ -73,10 +81,13 @@ public:
   int  getMsgCount() const { return _msgcount; }
   bool hasDisplay() const { return _display != NULL; }
   bool isButtonPressed() const;
+  bool isPowersaveEnabled() const { return powersave_enabled; }
+  bool isBuzzerEnabled() const;
 
   void toggleBuzzer();
   bool getGPSState();
   void toggleGPS();
+  void toggleSettingsItem(uint8_t item, NodePrefs* node_prefs);
 
 
   // from AbstractUITask

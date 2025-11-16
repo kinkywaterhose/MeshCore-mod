@@ -85,6 +85,7 @@ class HomeScreen : public UIScreen {
 #if UI_SENSORS_PAGE == 1
     SENSORS,
 #endif
+    SETTINGS,
     SHUTDOWN,
     Count    // keep as last
   };
@@ -96,32 +97,122 @@ class HomeScreen : public UIScreen {
   uint8_t _page;
   bool _shutdown_init;
   AdvertPath recent[UI_RECENT_LIST_SIZE];
+  uint8_t _settings_menu_item;  // Track which settings item is selected (0-3)
 
 
-  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts) {
-    // Convert millivolts to percentage
-    const int minMilliVolts = 3000; // Minimum voltage (e.g., 3.0V)
-    const int maxMilliVolts = 4200; // Maximum voltage (e.g., 4.2V)
-    int batteryPercentage = ((batteryMilliVolts - minMilliVolts) * 100) / (maxMilliVolts - minMilliVolts);
-    if (batteryPercentage < 0) batteryPercentage = 0; // Clamp to 0%
-    if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
+  // Calculate battery percentage based on LiPo discharge curve (not linear)
+  // LiPo batteries have a non-linear voltage discharge characteristic
+  // This implements a proper discharge curve instead of the incorrect linear model
+  int getBatteryPercentageFromVoltage(uint16_t batteryMilliVolts) {
+    // LiPo battery discharge curve lookup table
+    // Voltage (mV) -> Approximate State of Charge (%)
+    // These values are typical for single-cell LiPo batteries
+    static const struct {
+      uint16_t voltage;
+      uint8_t soc;
+    } discharge_curve[] = {
+      {4200, 100}, // 4.20V = 100% (fully charged)
+      {4150, 95},  // 4.15V = 95%
+      {4110, 90},  // 4.11V = 90%
+      {4080, 85},  // 4.08V = 85%
+      {4020, 80},  // 4.02V = 80%
+      {3970, 75},  // 3.97V = 75%
+      {3920, 70},  // 3.92V = 70%
+      {3880, 65},  // 3.88V = 65%
+      {3850, 60},  // 3.85V = 60%
+      {3820, 50},  // 3.82V = 50% (midpoint, voltage drops steeply here)
+      {3790, 40},  // 3.79V = 40%
+      {3760, 30},  // 3.76V = 30%
+      {3710, 20},  // 3.71V = 20%
+      {3680, 10},  // 3.68V = 10%
+      {3500, 5},   // 3.50V = 5% (critical threshold)
+      {3000, 0},   // 3.00V = 0% (minimum safe voltage)
+    };
+    
+    static const int curve_points = sizeof(discharge_curve) / sizeof(discharge_curve[0]);
+    
+    // Clamp voltage to valid range
+    if (batteryMilliVolts >= discharge_curve[0].voltage) {
+      return 100; // At or above max voltage
+    }
+    if (batteryMilliVolts <= discharge_curve[curve_points - 1].voltage) {
+      return 0; // At or below min voltage
+    }
+    
+    // Find the two points to interpolate between
+    for (int i = 0; i < curve_points - 1; i++) {
+      if (batteryMilliVolts > discharge_curve[i + 1].voltage && 
+          batteryMilliVolts <= discharge_curve[i].voltage) {
+        
+        // Linear interpolation between two points
+        uint16_t v_high = discharge_curve[i].voltage;
+        uint16_t v_low = discharge_curve[i + 1].voltage;
+        uint8_t soc_high = discharge_curve[i].soc;
+        uint8_t soc_low = discharge_curve[i + 1].soc;
+        
+        // soc = soc_high - (v_high - v) * (soc_high - soc_low) / (v_high - v_low)
+        int soc = soc_high - ((v_high - batteryMilliVolts) * (soc_high - soc_low)) / (v_high - v_low);
+        return soc;
+      }
+    }
+    
+    return 0; // Should not reach here
+  }
 
-    // battery icon
-    int iconWidth = 24;
-    int iconHeight = 10;
-    int iconX = display.width() - iconWidth - 5; // Position the icon near the top-right corner
-    int iconY = 0;
-    display.setColor(DisplayDriver::GREEN);
+  void renderBatteryIndicator(DisplayDriver& display, uint16_t batteryMilliVolts, NodePrefs* node_prefs = NULL) {
+    // Check if we should display voltage or icon
+    bool show_voltage = (node_prefs && node_prefs->battery_display_mode == 1);
+    
+    if (show_voltage) {
+      // Display raw voltage value
+      int iconX = display.width() - 30;
+      int iconY = 0;
+      display.setCursor(iconX, iconY);
+      
+      // Color based on battery level
+      int batteryPercentage = getBatteryPercentageFromVoltage(batteryMilliVolts);
+      if (batteryPercentage > 20) {
+        display.setColor(DisplayDriver::GREEN);
+      } else if (batteryPercentage > 10) {
+        display.setColor(DisplayDriver::YELLOW);
+      } else {
+        display.setColor(DisplayDriver::RED);
+      }
+      
+      // Display voltage with unit
+      char volt_str[16];
+      sprintf(volt_str, "%.2fV", batteryMilliVolts / 1000.0f);
+      display.print(volt_str);
+    } else {
+      // Display battery icon (original behavior)
+      // Convert millivolts to percentage using proper LiPo discharge curve
+      int batteryPercentage = getBatteryPercentageFromVoltage(batteryMilliVolts);
 
-    // battery outline
-    display.drawRect(iconX, iconY, iconWidth, iconHeight);
+      // battery icon
+      int iconWidth = 24;
+      int iconHeight = 10;
+      int iconX = display.width() - iconWidth - 5; // Position the icon near the top-right corner
+      int iconY = 0;
+      
+      // Color changes based on battery level for user warnings
+      if (batteryPercentage > 20) {
+        display.setColor(DisplayDriver::GREEN);
+      } else if (batteryPercentage > 10) {
+        display.setColor(DisplayDriver::YELLOW);
+      } else {
+        display.setColor(DisplayDriver::RED); // Critical battery level
+      }
 
-    // battery "cap"
-    display.fillRect(iconX + iconWidth, iconY + (iconHeight / 4), 3, iconHeight / 2);
+      // battery outline
+      display.drawRect(iconX, iconY, iconWidth, iconHeight);
 
-    // fill the battery based on the percentage
-    int fillWidth = (batteryPercentage * (iconWidth - 4)) / 100;
-    display.fillRect(iconX + 2, iconY + 2, fillWidth, iconHeight - 4);
+      // battery "cap"
+      display.fillRect(iconX + iconWidth, iconY + (iconHeight / 4), 3, iconHeight / 2);
+
+      // fill the battery based on the percentage
+      int fillWidth = (batteryPercentage * (iconWidth - 4)) / 100;
+      display.fillRect(iconX + 2, iconY + 2, fillWidth, iconHeight - 4);
+    }
   }
 
   CayenneLPP sensors_lpp;
@@ -154,7 +245,7 @@ class HomeScreen : public UIScreen {
 public:
   HomeScreen(UITask* task, mesh::RTCClock* rtc, SensorManager* sensors, NodePrefs* node_prefs)
      : _task(task), _rtc(rtc), _sensors(sensors), _node_prefs(node_prefs), _page(0), 
-       _shutdown_init(false), sensors_lpp(200) {  }
+       _shutdown_init(false), _settings_menu_item(0), sensors_lpp(200) {  }
 
   void poll() override {
     if (_shutdown_init && !_task->isButtonPressed()) {  // must wait for USR button to be released
@@ -173,10 +264,10 @@ public:
     display.print(filtered_name);
 
     // battery voltage
-    renderBatteryIndicator(display, _task->getBattMilliVolts());
+    renderBatteryIndicator(display, _task->getBattMilliVolts(), _node_prefs);
 
-    // curr page indicator
-    int y = 14;
+    // curr page indicator (moved up to y=10 to avoid overlap with menu items)
+    int y = 10;
     int x = display.width() / 2 - 5 * (HomePage::Count-1);
     for (uint8_t i = 0; i < HomePage::Count; i++, x += 10) {
       if (i == _page) {
@@ -357,6 +448,58 @@ public:
       if (sensors_scroll) sensors_scroll_offset = (sensors_scroll_offset+1)%sensors_nb;
       else sensors_scroll_offset = 0;
 #endif
+    } else if (_page == HomePage::SETTINGS) {
+      display.setColor(DisplayDriver::LIGHT);
+      display.setTextSize(1);
+      
+      // Determine number of menu items based on hardware
+      #ifdef PIN_BUZZER
+      const int num_menu_items = 5;
+      const char* menu_names[] = {"Powersave", "Rotate", "Screen On", "Battery", "Buzzer"};
+      #else
+      const int num_menu_items = 4;
+      const char* menu_names[] = {"Powersave", "Rotate", "Screen On", "Battery"};
+      #endif
+      
+      const char* menu_states[5];
+      
+      // Powersave state
+      menu_states[0] = _task->isPowersaveEnabled() ? "ON" : "OFF";
+      
+      // Rotate state
+      menu_states[1] = (_node_prefs && _node_prefs->screen_rotate) ? "180" : "0";
+      
+      // Screen On state
+      const char* screen_modes[] = {"Always", "Messages", "Never"};
+      menu_states[2] = (_node_prefs) ? screen_modes[_node_prefs->screen_mode] : "Messages";
+      
+      // Battery display state
+      const char* battery_modes[] = {"Icon", "Voltage"};
+      menu_states[3] = (_node_prefs) ? battery_modes[_node_prefs->battery_display_mode] : "Icon";
+      
+      #ifdef PIN_BUZZER
+      // Buzzer state
+      menu_states[4] = _task->isBuzzerEnabled() ? "ON" : "OFF";
+      #endif
+      
+      // Render menu items
+      int y = 14;
+      for (int i = 0; i < num_menu_items; i++) {
+        display.setCursor(0, y);  // Set cursor at start of line
+        if (i == _settings_menu_item) {
+          display.setColor(DisplayDriver::GREEN);  // Highlight selected
+          display.print(">");
+        } else {
+          display.setColor(DisplayDriver::LIGHT);
+          display.print(" ");
+        }
+        
+        display.setCursor(8, y);
+        display.print(menu_names[i]);
+        display.print(": ");
+        display.print(menu_states[i]);
+        y += 12;
+      }
     } else if (_page == HomePage::SHUTDOWN) {
       display.setColor(DisplayDriver::GREEN);
       display.setTextSize(1);
@@ -376,10 +519,24 @@ public:
       return true;
     }
     if (c == KEY_NEXT || c == KEY_RIGHT) {
+      // Single click always goes to next page
       _page = (_page + 1) % HomePage::Count;
       if (_page == HomePage::RECENT) {
         _task->showAlert("Recent adverts", 800);
       }
+      // Reset settings menu position when leaving settings page
+      if (_page != HomePage::SETTINGS) {
+        _settings_menu_item = 0;
+      }
+      return true;
+    }
+    if (c == KEY_SELECT && _page == HomePage::SETTINGS) {
+      // Triple-click on Settings page navigates through menu items
+      #ifdef PIN_BUZZER
+      _settings_menu_item = (_settings_menu_item + 1) % 5;  // Cycle through 5 menu items
+      #else
+      _settings_menu_item = (_settings_menu_item + 1) % 4;  // Cycle through 4 menu items
+      #endif
       return true;
     }
     if (c == KEY_ENTER && _page == HomePage::BLUETOOTH) {
@@ -412,6 +569,11 @@ public:
       return true;
     }
 #endif
+    if (c == KEY_ENTER && _page == HomePage::SETTINGS) {
+      // Long press toggles the selected setting item
+      _task->toggleSettingsItem(_settings_menu_item, _node_prefs);
+      return true;
+    }
     if (c == KEY_ENTER && _page == HomePage::SHUTDOWN) {
       _shutdown_init = true;  // need to wait for button to be released
       return true;
@@ -528,6 +690,10 @@ void UITask::begin(DisplayDriver* display, SensorManager* sensors, NodePrefs* no
   _node_prefs = node_prefs;
   if (_display != NULL) {
     _display->turnOn();
+    // Apply saved rotation setting
+    if (_node_prefs) {
+      _display->setRotation(_node_prefs->screen_rotate);
+    }
   }
 
 #ifdef PIN_BUZZER
@@ -596,7 +762,11 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
   setCurrScreen(msg_preview);
 
   if (_display != NULL) {
-    if (!_display->isOn()) _display->turnOn();
+    // Only turn on display if screen_mode allows it
+    uint8_t screen_mode = _node_prefs ? _node_prefs->screen_mode : SCREEN_MODE_MESSAGES;
+    if (screen_mode == SCREEN_MODE_ALWAYS || screen_mode == SCREEN_MODE_MESSAGES) {
+      if (!_display->isOn()) _display->turnOn();
+    }
     _auto_off = millis() + AUTO_OFF_MILLIS;  // extend the auto-off timer
     _next_refresh = 100;  // trigger refresh
   }
@@ -809,20 +979,21 @@ char UITask::handleLongPress(char c) {
     the_mesh.enterCLIRescue();
     c = 0;   // consume event
   }
+  // Note: Settings are now handled via the dedicated SETTINGS page, not via long press menu
   return c;
 }
 
 char UITask::handleDoubleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: double click triggered");
   checkDisplayOn(c);
+  // Note: Settings menu navigation is now handled via the dedicated SETTINGS page
   return c;
 }
 
 char UITask::handleTripleClick(char c) {
   MESH_DEBUG_PRINTLN("UITask: triple click triggered");
   checkDisplayOn(c);
-  toggleBuzzer();
-  c = 0;
+  // Return the key code so it can be handled by the current screen
   return c;
 }
 
@@ -873,4 +1044,62 @@ void UITask::toggleBuzzer() {
     }
     _next_refresh = 0;  // trigger refresh
   #endif
+}
+
+bool UITask::isBuzzerEnabled() const {
+  #ifdef PIN_BUZZER
+    return !buzzer.isQuiet();
+  #else
+    return false;
+  #endif
+}
+
+void UITask::toggleSettingsItem(uint8_t item, NodePrefs* node_prefs) {
+  switch (item) {
+    case 0:  // Powersave
+      powersave_enabled = !powersave_enabled;
+      showAlert(powersave_enabled ? "Powersave: ON" : "Powersave: OFF", 1000);
+      // TODO: Apply powersave setting to radio/WiFi
+      break;
+      
+    case 1:  // Rotate
+      if (node_prefs && _display) {
+        node_prefs->screen_rotate = (node_prefs->screen_rotate == 0) ? 1 : 0;
+        _display->setRotation(node_prefs->screen_rotate);
+        showAlert(node_prefs->screen_rotate ? "Rotate: 180" : "Rotate: 0", 1500);
+        the_mesh.savePrefs();
+        _next_refresh = 0;  // force immediate refresh
+      }
+      break;
+      
+    case 2:  // Screen On
+      if (node_prefs) {
+        node_prefs->screen_mode = (node_prefs->screen_mode + 1) % 3;
+        const char* mode_names[] = {"Always", "Messages", "Never"};
+        char alert_msg[32];
+        sprintf(alert_msg, "Screen: %s", mode_names[node_prefs->screen_mode]);
+        showAlert(alert_msg, 1500);
+        the_mesh.savePrefs();
+      }
+      break;
+      
+    case 3:  // Battery display mode
+      if (node_prefs) {
+        node_prefs->battery_display_mode = (node_prefs->battery_display_mode + 1) % 2;
+        const char* battery_modes[] = {"Icon", "Voltage"};
+        char alert_msg[32];
+        sprintf(alert_msg, "Battery: %s", battery_modes[node_prefs->battery_display_mode]);
+        showAlert(alert_msg, 1500);
+        the_mesh.savePrefs();
+        _next_refresh = 0;  // force immediate refresh
+      }
+      break;
+      
+    case 4:  // Buzzer
+      toggleBuzzer();
+      break;
+      
+    default:
+      break;
+  }
 }

@@ -41,6 +41,7 @@ class UITask : public AbstractUITask {
 
   void renderCurrScreen();
   void userLedHandler();
+  int getBatteryPercentageFromVoltage(uint16_t batteryMilliVolts);
   void renderBatteryIndicator(uint16_t batteryMilliVolts);
   
   // Button action handlers

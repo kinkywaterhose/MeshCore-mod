@@ -24,4 +24,7 @@ struct NodePrefs {  // persisted to file
   float rx_delay_base;
   uint32_t ble_pin;
   uint8_t  advert_loc_policy;
+  uint8_t  screen_mode;    // 0=Always on, 1=On for messages (default), 2=Never/manual only
+  uint8_t  screen_rotate;  // 0=Normal orientation, 1=180 degrees rotation
+  uint8_t  battery_display_mode;  // 0=Icon (default), 1=Voltage
 };

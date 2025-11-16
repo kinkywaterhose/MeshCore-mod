@@ -16,6 +16,7 @@ public:
   virtual bool isOn() = 0;
   virtual void turnOn() = 0;
   virtual void turnOff() = 0;
+  virtual void setRotation(uint8_t rotation) {}  // Optional: implement in subclasses that support rotation
   virtual void clear() = 0;
   virtual void startFrame(Color bkg = DARK) = 0;
   virtual void setTextSize(int sz) = 0;

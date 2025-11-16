@@ -3,6 +3,11 @@
 #include <Arduino.h> // needed for PlatformIO
 #include <Mesh.h>
 
+// Screen mode constants
+#define SCREEN_MODE_ALWAYS    0
+#define SCREEN_MODE_MESSAGES  1
+#define SCREEN_MODE_NEVER     2
+
 #define CMD_APP_START                 1
 #define CMD_SEND_TXT_MSG              2
 #define CMD_SEND_CHANNEL_TXT_MSG      3
@@ -726,6 +731,8 @@ MyMesh::MyMesh(mesh::Radio &radio, mesh::RNG &rng, mesh::RTCClock &rtc, SimpleMe
   _prefs.bw = LORA_BW;
   _prefs.cr = LORA_CR;
   _prefs.tx_power_dbm = LORA_TX_POWER;
+  _prefs.screen_mode = SCREEN_MODE_MESSAGES;  // Default: turn on for messages
+  _prefs.screen_rotate = 0;  // Default: normal orientation (0 degrees)
   //_prefs.rx_delay_base = 10.0f;  enable once new algo fixed
 }
 
@@ -763,6 +770,8 @@ void MyMesh::begin(bool has_display) {
   _prefs.sf = constrain(_prefs.sf, 5, 12);
   _prefs.cr = constrain(_prefs.cr, 5, 8);
   _prefs.tx_power_dbm = constrain(_prefs.tx_power_dbm, 1, MAX_LORA_TX_POWER);
+  _prefs.screen_mode = constrain(_prefs.screen_mode, 0, 2);  // 0=Always, 1=Messages, 2=Never
+  _prefs.screen_rotate = constrain(_prefs.screen_rotate, 0, 1);  // 0=Normal, 1=180 degrees
 
 #ifdef BLE_PIN_CODE // 123456 by default
   if (_prefs.ble_pin == 0) {

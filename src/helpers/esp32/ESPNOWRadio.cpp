@@ -36,6 +36,9 @@ void ESPNOWRadio::init() {
 
   esp_wifi_set_max_tx_power(80);  // should be 20dBm
 
+  // Enable WiFi power save mode for better battery life
+  esp_wifi_set_ps(WIFI_PS_MAX_MODEM);
+
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
 
@@ -110,4 +113,12 @@ int ESPNOWRadio::recvRaw(uint8_t* bytes, int sz) {
 
 uint32_t ESPNOWRadio::getEstAirtimeFor(int len_bytes) {
   return 4;  // Fast AF
+}
+
+void ESPNOWRadio::shutdown() {
+  // Deinitialize ESP-NOW and turn off WiFi to save power when idle
+  if (esp_now_deinit() == ESP_OK) {
+    ESPNOW_DEBUG_PRINTLN("ESP-NOW deinitialized");
+  }
+  WiFi.mode(WIFI_OFF);
 }

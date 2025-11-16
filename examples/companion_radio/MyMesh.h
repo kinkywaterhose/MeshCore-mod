@@ -95,6 +95,11 @@ public:
   NodePrefs *getNodePrefs();
   uint32_t getBLEPin();
 
+  // helpers, short-cuts
+  void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
+  void saveChannels() { _store->saveChannels(this); }
+  void saveContacts() { _store->saveContacts(this); }
+
   void loop();
   void handleCmdFrame(size_t len);
   bool advert();
@@ -169,11 +174,6 @@ private:
 
   void checkCLIRescueCmd();
   void checkSerialInterface();
-
-  // helpers, short-cuts
-  void savePrefs() { _store->savePrefs(_prefs, sensors.node_lat, sensors.node_lon); }
-  void saveChannels() { _store->saveChannels(this); }
-  void saveContacts() { _store->saveContacts(this); }
 
 private:
   DataStore* _store;
