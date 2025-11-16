@@ -221,7 +221,8 @@ void DataStore::loadPrefsInt(const char *filename, NodePrefs& _prefs, double& no
     file.read((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
     file.read((uint8_t *)&_prefs.screen_mode, sizeof(_prefs.screen_mode));                 // 78
     file.read((uint8_t *)&_prefs.screen_rotate, sizeof(_prefs.screen_rotate));             // 79
-    file.read((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
+    file.read((uint8_t *)&_prefs.battery_display_mode, sizeof(_prefs.battery_display_mode)); // 80
+    file.read((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 81
 
     file.close();
   }
@@ -253,7 +254,8 @@ void DataStore::savePrefs(const NodePrefs& _prefs, double node_lat, double node_
     file.write((uint8_t *)&_prefs.multi_acks, sizeof(_prefs.multi_acks));                   // 77
     file.write((uint8_t *)&_prefs.screen_mode, sizeof(_prefs.screen_mode));                 // 78
     file.write((uint8_t *)&_prefs.screen_rotate, sizeof(_prefs.screen_rotate));             // 79
-    file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 80
+    file.write((uint8_t *)&_prefs.battery_display_mode, sizeof(_prefs.battery_display_mode)); // 80
+    file.write((uint8_t *)&_prefs.ble_pin, sizeof(_prefs.ble_pin));                         // 81
 
     file.close();
   }
