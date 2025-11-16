@@ -23,6 +23,16 @@ void SSD1306Display::turnOff() {
   _isOn = false;
 }
 
+void SSD1306Display::setRotation(uint8_t rotation) {
+  // For OLED displays, rotation values:
+  // 0 = Normal (0 degrees)
+  // 1 = 90 degrees (not typical for OLED)
+  // 2 = 180 degrees (upside down)
+  // 3 = 270 degrees (not typical for OLED)
+  // For our use case: 0 = normal, 1 = 180 degrees
+  display.setRotation(rotation == 0 ? 0 : 2);
+}
+
 void SSD1306Display::clear() {
   display.clearDisplay();
   display.display();

@@ -142,20 +142,83 @@ void UITask::newMsg(uint8_t path_len, const char* from_name, const char* text, i
   }
 }
 
+// Calculate battery percentage based on LiPo discharge curve (not linear)
+// LiPo batteries have a non-linear voltage discharge characteristic
+// This implements a proper discharge curve instead of the incorrect linear model
+int UITask::getBatteryPercentageFromVoltage(uint16_t batteryMilliVolts) {
+  // LiPo battery discharge curve lookup table
+  // Voltage (mV) -> Approximate State of Charge (%)
+  // These values are typical for single-cell LiPo batteries
+  static const struct {
+    uint16_t voltage;
+    uint8_t soc;
+  } discharge_curve[] = {
+    {4200, 100}, // 4.20V = 100% (fully charged)
+    {4150, 95},  // 4.15V = 95%
+    {4110, 90},  // 4.11V = 90%
+    {4080, 85},  // 4.08V = 85%
+    {4020, 80},  // 4.02V = 80%
+    {3970, 75},  // 3.97V = 75%
+    {3920, 70},  // 3.92V = 70%
+    {3880, 65},  // 3.88V = 65%
+    {3850, 60},  // 3.85V = 60%
+    {3820, 50},  // 3.82V = 50% (midpoint, voltage drops steeply here)
+    {3790, 40},  // 3.79V = 40%
+    {3760, 30},  // 3.76V = 30%
+    {3710, 20},  // 3.71V = 20%
+    {3680, 10},  // 3.68V = 10%
+    {3500, 5},   // 3.50V = 5% (critical threshold)
+    {3000, 0},   // 3.00V = 0% (minimum safe voltage)
+  };
+  
+  static const int curve_points = sizeof(discharge_curve) / sizeof(discharge_curve[0]);
+  
+  // Clamp voltage to valid range
+  if (batteryMilliVolts >= discharge_curve[0].voltage) {
+    return 100; // At or above max voltage
+  }
+  if (batteryMilliVolts <= discharge_curve[curve_points - 1].voltage) {
+    return 0; // At or below min voltage
+  }
+  
+  // Find the two points to interpolate between
+  for (int i = 0; i < curve_points - 1; i++) {
+    if (batteryMilliVolts > discharge_curve[i + 1].voltage && 
+        batteryMilliVolts <= discharge_curve[i].voltage) {
+      
+      // Linear interpolation between two points
+      uint16_t v_high = discharge_curve[i].voltage;
+      uint16_t v_low = discharge_curve[i + 1].voltage;
+      uint8_t soc_high = discharge_curve[i].soc;
+      uint8_t soc_low = discharge_curve[i + 1].soc;
+      
+      // soc = soc_high - (v_high - v) * (soc_high - soc_low) / (v_high - v_low)
+      int soc = soc_high - ((v_high - batteryMilliVolts) * (soc_high - soc_low)) / (v_high - v_low);
+      return soc;
+    }
+  }
+  
+  return 0; // Should not reach here
+}
+
 void UITask::renderBatteryIndicator(uint16_t batteryMilliVolts) {
-  // Convert millivolts to percentage
-  const int minMilliVolts = 3000; // Minimum voltage (e.g., 3.0V)
-  const int maxMilliVolts = 4200; // Maximum voltage (e.g., 4.2V)
-  int batteryPercentage = ((batteryMilliVolts - minMilliVolts) * 100) / (maxMilliVolts - minMilliVolts);
-  if (batteryPercentage < 0) batteryPercentage = 0; // Clamp to 0%
-  if (batteryPercentage > 100) batteryPercentage = 100; // Clamp to 100%
+  // Convert millivolts to percentage using proper LiPo discharge curve
+  int batteryPercentage = getBatteryPercentageFromVoltage(batteryMilliVolts);
 
   // battery icon
   int iconWidth = 24;
   int iconHeight = 12;
   int iconX = _display->width() - iconWidth - 5; // Position the icon near the top-right corner
   int iconY = 0;
-  _display->setColor(DisplayDriver::GREEN);
+  
+  // Color changes based on battery level for user warnings
+  if (batteryPercentage > 20) {
+    _display->setColor(DisplayDriver::GREEN);
+  } else if (batteryPercentage > 10) {
+    _display->setColor(DisplayDriver::YELLOW);
+  } else {
+    _display->setColor(DisplayDriver::RED); // Critical battery level
+  }
 
   // battery outline
   _display->drawRect(iconX, iconY, iconWidth, iconHeight);

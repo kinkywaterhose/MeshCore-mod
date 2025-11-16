@@ -35,6 +35,7 @@ static uint32_t _atoi(const char* sp) {
 #endif
 
 #ifdef ESP32
+  #include <WiFi.h>
   #ifdef WIFI_SSID
     #include <helpers/esp32/SerialWifiInterface.h>
     SerialWifiInterface serial_interface;
@@ -109,6 +110,10 @@ void setup() {
   Serial.begin(115200);
 
   board.begin();
+
+  #if defined(ESP32) && !defined(WIFI_SSID)
+    WiFi.mode(WIFI_OFF);
+  #endif
 
 #ifdef DISPLAY_CLASS
   DisplayDriver* disp = NULL;
@@ -195,7 +200,7 @@ void setup() {
     #endif
   );
 
-#ifdef WIFI_SSID
+#if defined(WIFI_SSID)
   WiFi.begin(WIFI_SSID, WIFI_PWD);
   serial_interface.begin(TCP_PORT);
 #elif defined(BLE_PIN_CODE)
